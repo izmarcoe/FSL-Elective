@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Teachable Machine Pose Model</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@1.3.1/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/pose@0.8/dist/teachablemachine-pose.min.js"></script>
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css"
+    />
+    <style>
+      :root {
+        --primary: #2A3B4C;
+        --accent: #64FFDA;
+        --text: #E6F1FF;
+        --bg: #1F2937;
+        --container: rgba(255, 255, 255, 0.05);
+      }
+
+      body {
+        font-family: "Inter", "Segoe UI", sans-serif;
+        text-align: center;
+        background: var(--bg);
+        margin: 0;
+        padding: 20px;
+        min-height: 100vh;
+        color: var(--text);
+        line-height: 1.6;
+      }
+
+      h1 {
+        color: var(--accent);
+        font-size: 2.5em;
+        font-weight: 700;
+        margin-bottom: 1rem;
+        letter-spacing: -0.5px;
+      }
+
+      .subtitle {
+        color: var(--text);
+        opacity: 0.8;
+        margin-bottom: 2rem;
+        font-size: 1.1em;
+      }
+
+      button {
+        background: transparent;
+        color: var(--accent);
+        padding: 12px 24px;
+        border: 2px solid var(--accent);
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 16px;
+        font-weight: 500;
+        transition: all 0.3s ease;
+        margin-bottom: 2rem;
+      }
+
+      button:hover {
+        background: rgba(100, 255, 218, 0.1);
+        transform: translateY(-2px);
+      }
+
+      .container {
+        display: grid;
+        grid-template-columns: auto ;
+        gap: 20px;
+        background: var(--container);
+        backdrop-filter: blur(10px);
+        border-radius: 12px;
+        padding: 2rem;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+        border: 1px solid rgba(255, 255, 255, 0.05);
+        max-width: 1200px;
+        margin: 20px auto;
+      }
+
+      .accuracy-display {
+        background: rgba(42, 59, 76, 0.3);
+        border-radius: 12px;
+        padding: 20px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .detected-label {
+        font-size: 32px;
+        font-weight: 700;
+        color: var(--accent);
+        margin-bottom: 10px;
+        text-align: center;
+        opacity: 0;
+        transform: translateY(10px);
+        transition: all 0.3s ease;
+      }
+
+      .detected-label.active {
+        opacity: 1;
+        transform: translateY(0);
+      }
+
+      .accuracy-meter {
+        font-size: 24px;
+        color: var(--text);
+        background: rgba(100, 255, 218, 0.1);
+        padding: 10px 20px;
+        border-radius: 8px;
+        border: 2px solid var(--accent);
+      }
+
+      @media (max-width: 1200px) {
+        .container {
+          grid-template-columns: 1fr;
+          grid-template-rows: auto auto auto;
+        }
+        
+        .accuracy-display {
+          margin-top: 20px;
+        }
+      }
+
+      @media (max-width: 768px) {
+        .container {
+          flex-direction: column;
+          align-items: center;
+        }
+        
+        #label-container {
+          flex: none;
+          width: 800px;
+          max-height: 200px;
+        }
+      }
+
+      @media (max-width: 600px) {
+        body {
+          padding: 10px;
+        }
+        h1 {
+          font-size: 2em;
+        }
+        .container {
+          padding: 1rem;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Teachable Machine Pose Model</h1>
+    
+    <button type="button" onclick="init()">Start</button>
+    <div class="container">
+      <div class="camera-container">
+        <canvas id="canvas"></canvas>
+      </div>
+      <div id="label-container"></div>
+      <div class="accuracy-display">
+        <div class="detected-label"></div>
+        <div class="accuracy-meter"></div>
+      </div>
+    </div>
+    <script>
+      const URL = "https://teachablemachine.withgoogle.com/models/JyS0lQ-wN/";
+      let model, webcam, ctx, labelContainer, maxPredictions;
+
+      async function init() {
+        const modelURL = URL + "model.json";
+        const metadataURL = URL + "metadata.json";
+        model = await tmPose.load(modelURL, metadataURL);
+        maxPredictions = model.getTotalClasses();
+        const size = 300;
+        const flip = true;
+        webcam = new tmPose.Webcam(size, size, flip);
+        await webcam.setup();
+        await webcam.play();
+        window.requestAnimationFrame(loop);
+        const canvas = document.getElementById("canvas");
+        canvas.width = size;
+        canvas.height = size;
+        ctx = canvas.getContext("2d");
+        labelContainer = document.getElementById("label-container");
+        labelContainer.innerHTML = "";
+        for (let i = 0; i < maxPredictions; i++) {
+          labelContainer.appendChild(document.createElement("div"));
+        }
+      }
+
+      async function loop(timestamp) {
+        webcam.update();
+        await predict();
+        window.requestAnimationFrame(loop);
+      }
+
+      async function predict() {
+        const { pose, posenetOutput } = await model.estimatePose(webcam.canvas);
+        const prediction = await model.predict(posenetOutput);
+        
+        const detectedLabel = document.querySelector('.detected-label');
+        const accuracyMeter = document.querySelector('.accuracy-meter');
+        
+        let highestPrediction = { probability: 0 };
+        
+        for (let i = 0; i < maxPredictions; i++) {
+          const classPrediction = prediction[i];
+          if (classPrediction.probability > highestPrediction.probability) {
+            highestPrediction = classPrediction;
+          }
+        }
+        
+        if (highestPrediction.probability > 0.90) {
+          detectedLabel.textContent = highestPrediction.className;
+          detectedLabel.classList.add('active');
+          accuracyMeter.textContent = `${(highestPrediction.probability * 100).toFixed(1)}%`;
+        } else {
+          detectedLabel.classList.remove('active');
+          accuracyMeter.textContent = '';
+        }
+        drawPose(pose);
+      }
+
+      function drawPose(pose) {
+        if (webcam.canvas) {
+          ctx.drawImage(webcam.canvas, 0, 0);
+          if (pose) {
+            const minPartConfidence = 0.5;
+            tmPose.drawKeypoints(pose.keypoints, minPartConfidence, ctx);
+            tmPose.drawSkeleton(pose.keypoints, minPartConfidence, ctx);
+          }
+        }
+      }
+    </script>
+  </body>
+</html>
